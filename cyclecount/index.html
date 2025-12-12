@@ -63,10 +63,17 @@
     .card__header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 4px; }
     .status-pill { padding: 6px 10px; border-radius: 999px; border: 1px solid var(--border); background: #fff; color: var(--muted); font-weight: 700; }
     .items { border: 1px solid var(--border); border-radius: 14px; background: #fff; overflow: hidden; }
-    .item-row { display: grid; grid-template-columns: 1fr 110px; gap: 12px; align-items: center; padding: 12px 14px; border-bottom: 1px dashed var(--border); }
+    .item-row { display: grid; grid-template-columns: 1fr; gap: 12px; align-items: center; padding: 12px 14px; border-bottom: 1px dashed var(--border); }
     .item-row:last-child { border-bottom: 0; }
+    .item-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
     .item-name { font-weight: 700; color: var(--ink); }
     .item-hint { color: var(--muted); font-weight: 600; font-size: .9rem; }
+    .location-list { display: grid; gap: 8px; }
+    .count-row { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; background: #f8fafc; border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; }
+    .location-remove { background: transparent; border: 1px solid var(--border); color: var(--muted); padding: 6px 10px; border-radius: 8px; font-weight: 800; }
+    .location-remove:hover { filter: none; background: #fff; }
+    .item-add { background: #fff; color: var(--accent); border-color: var(--border); width: 34px; height: 34px; padding: 0; display: inline-grid; place-items: center; font-size: 1.05rem; }
+    .item-add:hover { filter: none; box-shadow: 0 6px 18px rgba(14,165,233,.15); }
     input[type=number] {
       width: 100%;
       padding: 8px 10px;
@@ -146,6 +153,7 @@
   <script>
     (function(){
       const STORE_KEY = 'cycle-count-store';
+      const DATE_KEY = 'cycle-count-date';
       const saveStatusEl = document.getElementById('save-status');
       const lastEditedEl = document.getElementById('last-edited');
       const storeOverlay = document.getElementById('store-overlay');
@@ -195,24 +203,84 @@
         return arr;
       }
 
+      function createCountRow(itemId, value, allowRemove){
+        const row = document.createElement('div');
+        row.className = 'count-row';
+
+        const input = document.createElement('input');
+        input.type = 'number';
+        input.min = '0';
+        input.step = '1';
+        input.placeholder = '0';
+        input.dataset.itemId = itemId;
+        input.dataset.countField = 'true';
+        if (typeof value === 'number') {
+          input.value = value;
+        }
+        input.addEventListener('input', () => scheduleSave(input));
+
+        const removeBtn = document.createElement('button');
+        removeBtn.type = 'button';
+        removeBtn.className = 'location-remove';
+        removeBtn.textContent = '×';
+        removeBtn.addEventListener('click', () => {
+          const container = row.parentElement;
+          row.remove();
+          if (!container.querySelector('.count-row')) {
+            container.appendChild(createCountRow(itemId, '', false));
+          }
+          scheduleSave(input);
+        });
+        if (!allowRemove) {
+          removeBtn.style.visibility = 'hidden';
+        }
+
+        row.appendChild(input);
+        row.appendChild(removeBtn);
+        return row;
+      }
+
+      function addCountField(itemRow){
+        const itemId = itemRow.dataset.itemId;
+        const container = itemRow.querySelector('.location-list');
+        const newRow = createCountRow(itemId, '', true);
+        container.appendChild(newRow);
+        const input = newRow.querySelector('input');
+        input.focus();
+      }
+
+      function renderItemRow(item){
+        const row = document.createElement('div');
+        row.className = 'item-row';
+        row.dataset.itemId = item.id;
+
+        const header = document.createElement('div');
+        header.className = 'item-header';
+        const label = document.createElement('div');
+        label.className = 'item-name';
+        label.textContent = item.name;
+        const addBtn = document.createElement('button');
+        addBtn.type = 'button';
+        addBtn.className = 'item-add';
+        addBtn.title = 'Add another count';
+        addBtn.textContent = '+';
+        addBtn.addEventListener('click', () => addCountField(row));
+        header.appendChild(label);
+        header.appendChild(addBtn);
+
+        const locationList = document.createElement('div');
+        locationList.className = 'location-list';
+        locationList.appendChild(createCountRow(item.id, '', false));
+
+        row.appendChild(header);
+        row.appendChild(locationList);
+        return row;
+      }
+
       function buildItems(){
         const frag = document.createDocumentFragment();
         for (const item of shuffle(ITEM_POOL)) {
-          const row = document.createElement('div');
-          row.className = 'item-row';
-          const label = document.createElement('div');
-          label.className = 'item-name';
-          label.textContent = item.name;
-          const input = document.createElement('input');
-          input.type = 'number';
-          input.min = '0';
-          input.step = '1';
-          input.placeholder = '0';
-          input.dataset.itemId = item.id;
-          input.addEventListener('input', () => scheduleSave(input));
-          row.appendChild(label);
-          row.appendChild(input);
-          frag.appendChild(row);
+          frag.appendChild(renderItemRow(item));
         }
         itemList.innerHTML = '';
         itemList.appendChild(frag);
@@ -242,26 +310,46 @@
 
       function collectItems(){
         const entries = {};
-        itemList.querySelectorAll('input[data-item-id]').forEach(input => {
-          const key = input.dataset.itemId;
-          const qty = readInt(input.value);
-          if (qty > 0) entries[key] = qty;
-          else if (input.value === '') entries[key] = 0;
+        itemList.querySelectorAll('.item-row').forEach(row => {
+          const itemId = row.dataset.itemId;
+          const inputs = Array.from(row.querySelectorAll('input[data-count-field]'));
+          const total = inputs.reduce((sum, input) => sum + readInt(input.value), 0);
+          const hasInput = inputs.some(input => input.value !== '');
+          if (hasInput) {
+            entries[itemId] = total;
+          }
         });
         return entries;
       }
 
+      function deriveTotal(value){
+        if (typeof value === 'number') return value;
+        if (value && typeof value === 'object') {
+          return Object.values(value).reduce((sum, qty) => {
+            const parsed = Number.isFinite(qty) ? qty : Number.parseInt(qty, 10);
+            return Number.isFinite(parsed) && parsed >= 0 ? sum + parsed : sum;
+          }, 0);
+        }
+        return '';
+      }
+
       function applyItems(saved){
         const data = saved || {};
-        itemList.querySelectorAll('input[data-item-id]').forEach(input => {
-          const key = input.dataset.itemId;
-          const val = data[key];
-          input.value = typeof val === 'number' ? val : '';
+        itemList.querySelectorAll('.item-row').forEach(row => {
+          const itemId = row.dataset.itemId;
+          const total = deriveTotal(data[itemId]);
+          const container = row.querySelector('.location-list');
+          container.innerHTML = '';
+          container.appendChild(createCountRow(itemId, typeof total === 'number' ? total : '', false));
         });
       }
 
+      function normalizeDate(value){
+        return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null;
+      }
+
       function getDateKey(){
-        return datePicker.value || new Date().toISOString().slice(0,10);
+        return normalizeDate(datePicker.value) || new Date().toISOString().slice(0,10);
       }
 
       function persistStoreNumber(value){
@@ -279,6 +367,18 @@
           storeOverlay.hidden = false;
           storeInput.focus();
         }
+      }
+
+      function persistDate(value){
+        localStorage.setItem(DATE_KEY, value);
+      }
+
+      function restoreDate(){
+        const saved = normalizeDate(localStorage.getItem(DATE_KEY));
+        const today = new Date().toISOString().slice(0, 10);
+        const value = saved || today;
+        datePicker.value = value;
+        persistDate(value);
       }
 
       async function loadSaved(){
@@ -367,10 +467,14 @@
       });
 
       datePicker.addEventListener('change', () => {
+        const dateVal = normalizeDate(datePicker.value);
+        if (dateVal) {
+          persistDate(dateVal);
+        }
         loadSaved();
       });
 
-      datePicker.value = new Date().toISOString().slice(0, 10);
+      restoreDate();
       buildItems();
       restoreStoreNumber();
       if (storeNumber) {
