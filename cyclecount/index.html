@@ -69,10 +69,11 @@
     .item-name { font-weight: 700; color: var(--ink); }
     .item-hint { color: var(--muted); font-weight: 600; font-size: .9rem; }
     .location-list { display: grid; gap: 8px; }
-    .location-row { display: grid; grid-template-columns: 1fr 110px auto; gap: 10px; align-items: center; background: #f8fafc; border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; }
-    .location-name { font-weight: 700; color: var(--muted); letter-spacing: .01em; }
+    .count-row { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; background: #f8fafc; border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; }
     .location-remove { background: transparent; border: 1px solid var(--border); color: var(--muted); padding: 6px 10px; border-radius: 8px; font-weight: 800; }
     .location-remove:hover { filter: none; background: #fff; }
+    .item-add { background: #fff; color: var(--accent); border-color: var(--border); width: 34px; height: 34px; padding: 0; display: inline-grid; place-items: center; font-size: 1.05rem; }
+    .item-add:hover { filter: none; box-shadow: 0 6px 18px rgba(14,165,233,.15); }
     input[type=number] {
       width: 100%;
       padding: 8px 10px;
@@ -187,7 +188,6 @@
         { id: 'bubble', name: 'Bubble cushion rolls' }
       ];
 
-      const DEFAULT_LOCATION = 'Sales floor';
       let storeNumber = null;
       let saveTimer = null;
       let lastSavedInput = null;
@@ -202,14 +202,9 @@
         return arr;
       }
 
-      function createLocationRow(itemId, locationName, value, allowRemove){
+      function createCountRow(itemId, value, allowRemove){
         const row = document.createElement('div');
-        row.className = 'location-row';
-        row.dataset.locationName = locationName;
-
-        const nameEl = document.createElement('div');
-        nameEl.className = 'location-name';
-        nameEl.textContent = locationName;
+        row.className = 'count-row';
 
         const input = document.createElement('input');
         input.type = 'number';
@@ -217,7 +212,7 @@
         input.step = '1';
         input.placeholder = '0';
         input.dataset.itemId = itemId;
-        input.dataset.location = locationName;
+        input.dataset.countField = 'true';
         if (typeof value === 'number') {
           input.value = value;
         }
@@ -226,12 +221,12 @@
         const removeBtn = document.createElement('button');
         removeBtn.type = 'button';
         removeBtn.className = 'location-remove';
-        removeBtn.textContent = 'Remove';
+        removeBtn.textContent = '×';
         removeBtn.addEventListener('click', () => {
           const container = row.parentElement;
           row.remove();
-          if (!container.querySelector('.location-row')) {
-            container.appendChild(createLocationRow(itemId, DEFAULT_LOCATION, '', false));
+          if (!container.querySelector('.count-row')) {
+            container.appendChild(createCountRow(itemId, '', false));
           }
           scheduleSave(input);
         });
@@ -239,23 +234,18 @@
           removeBtn.style.visibility = 'hidden';
         }
 
-        row.appendChild(nameEl);
         row.appendChild(input);
         row.appendChild(removeBtn);
         return row;
       }
 
-      function addLocationToRow(itemRow){
+      function addCountField(itemRow){
         const itemId = itemRow.dataset.itemId;
-        const name = prompt('Location name (e.g., Backroom, Returns)');
-        if (!name) return;
-        const trimmed = name.trim();
-        if (!trimmed) return;
         const container = itemRow.querySelector('.location-list');
-        const exists = Array.from(container.querySelectorAll('.location-row')).some(row => row.dataset.locationName.toLowerCase() === trimmed.toLowerCase());
-        if (exists) return;
-        container.appendChild(createLocationRow(itemId, trimmed, '', true));
-        scheduleSave(container.querySelector('input[data-location="' + CSS.escape(trimmed) + '"]'));
+        const newRow = createCountRow(itemId, '', true);
+        container.appendChild(newRow);
+        const input = newRow.querySelector('input');
+        input.focus();
       }
 
       function renderItemRow(item){
@@ -270,14 +260,16 @@
         label.textContent = item.name;
         const addBtn = document.createElement('button');
         addBtn.type = 'button';
-        addBtn.textContent = 'Add location';
-        addBtn.addEventListener('click', () => addLocationToRow(row));
+        addBtn.className = 'item-add';
+        addBtn.title = 'Add another count';
+        addBtn.textContent = '+';
+        addBtn.addEventListener('click', () => addCountField(row));
         header.appendChild(label);
         header.appendChild(addBtn);
 
         const locationList = document.createElement('div');
         locationList.className = 'location-list';
-        locationList.appendChild(createLocationRow(item.id, DEFAULT_LOCATION, '', false));
+        locationList.appendChild(createCountRow(item.id, '', false));
 
         row.appendChild(header);
         row.appendChild(locationList);
@@ -319,46 +311,35 @@
         const entries = {};
         itemList.querySelectorAll('.item-row').forEach(row => {
           const itemId = row.dataset.itemId;
-          const locations = {};
-          row.querySelectorAll('input[data-location]').forEach(input => {
-            const locationName = input.dataset.location;
-            const qty = readInt(input.value);
-            if (qty > 0) locations[locationName] = qty;
-            else if (input.value === '') locations[locationName] = 0;
-          });
-          if (Object.keys(locations).length > 0) {
-            entries[itemId] = locations;
+          const inputs = Array.from(row.querySelectorAll('input[data-count-field]'));
+          const total = inputs.reduce((sum, input) => sum + readInt(input.value), 0);
+          const hasInput = inputs.some(input => input.value !== '');
+          if (hasInput) {
+            entries[itemId] = total;
           }
         });
         return entries;
       }
 
-      function normalizeSavedLocations(value){
+      function deriveTotal(value){
+        if (typeof value === 'number') return value;
         if (value && typeof value === 'object') {
-          return value;
+          return Object.values(value).reduce((sum, qty) => {
+            const parsed = Number.isFinite(qty) ? qty : Number.parseInt(qty, 10);
+            return Number.isFinite(parsed) && parsed >= 0 ? sum + parsed : sum;
+          }, 0);
         }
-        if (typeof value === 'number') {
-          return { [DEFAULT_LOCATION]: value };
-        }
-        return { [DEFAULT_LOCATION]: '' };
+        return '';
       }
 
       function applyItems(saved){
         const data = saved || {};
         itemList.querySelectorAll('.item-row').forEach(row => {
           const itemId = row.dataset.itemId;
-          const locations = normalizeSavedLocations(data[itemId]);
+          const total = deriveTotal(data[itemId]);
           const container = row.querySelector('.location-list');
           container.innerHTML = '';
-          const entries = Object.entries(locations);
-          if (entries.length === 0) {
-            container.appendChild(createLocationRow(itemId, DEFAULT_LOCATION, '', false));
-            return;
-          }
-          for (const [name, qty] of entries) {
-            const allowRemove = name !== DEFAULT_LOCATION || entries.length > 1;
-            container.appendChild(createLocationRow(itemId, name, typeof qty === 'number' ? qty : '', allowRemove));
-          }
+          container.appendChild(createCountRow(itemId, typeof total === 'number' ? total : '', false));
         });
       }
 
