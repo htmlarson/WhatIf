@@ -26,12 +26,31 @@ function normalizeDate(value) {
 function normalizeItems(obj) {
   if (!obj || typeof obj !== 'object') return null;
   const normalized = {};
+
   for (const [key, value] of Object.entries(obj)) {
     if (typeof key !== 'string' || !key.trim()) continue;
+
+    if (value && typeof value === 'object') {
+      const locations = {};
+      for (const [location, qtyRaw] of Object.entries(value)) {
+        const locationName = typeof location === 'string' ? location.trim() : '';
+        if (!locationName) continue;
+        const qty = Number.isFinite(qtyRaw) ? qtyRaw : Number.parseInt(qtyRaw, 10);
+        if (!Number.isFinite(qty) || qty < 0) continue;
+        locations[locationName] = Math.trunc(qty);
+      }
+
+      if (Object.keys(locations).length > 0) {
+        normalized[key] = locations;
+      }
+      continue;
+    }
+
     const qty = Number.isFinite(value) ? value : Number.parseInt(value, 10);
     if (!Number.isFinite(qty) || qty < 0) continue;
     normalized[key] = Math.trunc(qty);
   }
+
   return normalized;
 }
 
