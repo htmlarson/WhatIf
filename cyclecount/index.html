@@ -153,6 +153,7 @@
   <script>
     (function(){
       const STORE_KEY = 'cycle-count-store';
+      const DATE_KEY = 'cycle-count-date';
       const saveStatusEl = document.getElementById('save-status');
       const lastEditedEl = document.getElementById('last-edited');
       const storeOverlay = document.getElementById('store-overlay');
@@ -343,8 +344,12 @@
         });
       }
 
+      function normalizeDate(value){
+        return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null;
+      }
+
       function getDateKey(){
-        return datePicker.value || new Date().toISOString().slice(0,10);
+        return normalizeDate(datePicker.value) || new Date().toISOString().slice(0,10);
       }
 
       function persistStoreNumber(value){
@@ -362,6 +367,18 @@
           storeOverlay.hidden = false;
           storeInput.focus();
         }
+      }
+
+      function persistDate(value){
+        localStorage.setItem(DATE_KEY, value);
+      }
+
+      function restoreDate(){
+        const saved = normalizeDate(localStorage.getItem(DATE_KEY));
+        const today = new Date().toISOString().slice(0, 10);
+        const value = saved || today;
+        datePicker.value = value;
+        persistDate(value);
       }
 
       async function loadSaved(){
@@ -450,10 +467,14 @@
       });
 
       datePicker.addEventListener('change', () => {
+        const dateVal = normalizeDate(datePicker.value);
+        if (dateVal) {
+          persistDate(dateVal);
+        }
         loadSaved();
       });
 
-      datePicker.value = new Date().toISOString().slice(0, 10);
+      restoreDate();
       buildItems();
       restoreStoreNumber();
       if (storeNumber) {
